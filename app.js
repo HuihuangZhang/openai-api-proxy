@@ -4,7 +4,6 @@ var multer = require('multer');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const cors = require('cors');
 const bodyParser = require('body-parser')
-const tencentcloud = require("tencentcloud-sdk-nodejs");
 
 const app = express()
 var forms = multer({ limits: { fieldSize: 10 * 1024 * 1024 } });
@@ -13,23 +12,6 @@ app.use(cors());
 
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
-
-const TmsClient = tencentcloud.tms.v20201229.Client;
-const clientConfig = {
-  credential: {
-    secretId: process.env.TENCENT_CLOUD_SID,
-    secretKey: process.env.TENCENT_CLOUD_SKEY,
-  },
-  region: process.env.TENCENT_CLOUD_AP || "ap-singapore",
-  profile: {
-    httpProfile: {
-      endpoint: "tms.tencentcloudapi.com",
-    },
-  },
-};
-const mdClient = process.env.TENCENT_CLOUD_SID && process.env.TENCENT_CLOUD_SKEY ? new TmsClient(clientConfig) : false;
-
-const httpProxy = process.env.HTTP_PROXY
 
 const controller = new AbortController();
 
@@ -54,7 +36,6 @@ app.all(`*`, async (req, res) => {
     return res.status(403).send('Forbidden');
   }
 
-  // console.log( req );
   const { moderation, moderation_level, ...restBody } = req.body;
   let sentence = "";
   // 建立一个句子缓冲区
@@ -129,7 +110,6 @@ app.all(`*`, async (req, res) => {
     processing = false;
   }
 
-
   const options = {
     method: req.method,
     timeout: process.env.TIMEOUT || 30000,
@@ -144,40 +124,20 @@ app.all(`*`, async (req, res) => {
         sentence_buffer.push(data);
         await process_buffer(res);
       } else {
-        if (moderation && mdClient) {
-          try {
-            let data_array = JSON.parse(data);
-            const char = data_array.choices[0]?.delta?.content;
-            if (char) sentence += char;
-            // console.log("sentence",sentence );
-            if (char == '。' || char == '？' || char == '！' || char == "\n") {
-              // 将 sentence 送审
-              console.log("遇到句号，将句子放入缓冲区", sentence);
-              data_array.choices[0].delta.content = sentence;
-              sentence = "";
-              sentence_buffer.push(JSON.stringify(data_array));
-              await process_buffer(res);
-            }
-          } catch (error) {
-            // 因为开头已经处理的了 [DONE] 的情况，这里应该不会出现无法解析json的情况 
-            console.log("error", error);
-          }
-        } else {
-          // 如果没有文本审核参数或者设置，直接输出
-          res.write("data: " + data + "\n\n");
-        }
+        res.write("data: " + data + "\n\n");
       }
     }
   };
 
-  if (req.method.toLocaleLowerCase() === 'post' && req.body) options.body = JSON.stringify(restBody);
-  // console.log({url, options});
+  if (req.method.toLocaleLowerCase() === 'post' && req.body) {
+    options.body = JSON.stringify(restBody);
+  }
 
   try {
     // 如果是 chat completion 和 text completion，使用 SSE
     if ((req.url.startsWith('/v1/completions') ||
-      req.url.startsWith('/v1/chat/completions'))
-      && req.body.stream) {
+      req.url.startsWith('/v1/chat/completions')) &&
+      req.body.stream) {
       console.log("使用 SSE");
       const response = await myFetch(url, options);
       if (response.ok) {
@@ -187,9 +147,9 @@ app.all(`*`, async (req, res) => {
           'Cache-Control': 'no-cache',
           'Connection': 'keep-alive',
         });
+        // 解析 SSE server-side event
         const { createParser } = await import("eventsource-parser");
         const parser = createParser((event) => {
-          // console.log(event);    
           if (event.type === "event") {
             options.onMessage(event.data);
           }
@@ -216,7 +176,6 @@ app.all(`*`, async (req, res) => {
         const body = await response.text();
         res.status(response.status).send(body);
       }
-
     } else {
       console.log("使用 fetch");
       const response = await myFetch(url, options);
@@ -226,20 +185,6 @@ app.all(`*`, async (req, res) => {
       if (contentType.includes("application/json")) {
         // 处理JSON数据
         const data = await response.json();
-        // 审核结果
-        if (moderation && mdClient) {
-          const params = { "Content": Buffer.from(data.choices[0].message.content).toString('base64') };
-          const md_result = await mdClient.TextModeration(params);
-          console.log("审核结果", md_result);
-          let md_check = moderation_level == 'high' ? md_result.Suggestion != 'Pass' : md_result.Suggestion == 'Block';
-          if (md_check) {
-            // 终止输出
-            console.log("审核不通过", data.choices[0].message.content, md_result);
-            data.choices[0].message.content = "这个话题不适合讨论，换个话题吧。";
-          } else {
-            console.log("审核通过", data.choices[0].message.content);
-          }
-        }
         // 返回JSON数据
         res.json(data);
       } else if (contentType.includes("audio")) {
@@ -256,8 +201,6 @@ app.all(`*`, async (req, res) => {
         res.status(500).send("返回了未知类型的数据");
       }
     }
-
-
   } catch (error) {
     console.error(error);
     res.status(500).json({ "error": error.toString() });
@@ -299,4 +242,4 @@ app.use(function (err, req, res, next) {
 const port = process.env.PORT || 9000;
 app.listen(port, () => {
   console.log(`Server start on http://localhost:${port}`);
-})
+});
