@@ -1,4 +1,4 @@
-FROM --platform=$TARGETPLATFORM node:18-alpine3.15
+FROM node:18-alpine3.15
 WORKDIR /data/api
 
 COPY app.js app.js
