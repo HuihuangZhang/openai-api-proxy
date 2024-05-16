@@ -1,15 +1,15 @@
 const express = require('express')
 const fetch = require('cross-fetch')
-var multer = require('multer');
+const multer = require('multer');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const cors = require('cors');
 const bodyParser = require('body-parser')
 
 const app = express()
-var forms = multer({ limits: { fieldSize: 10 * 1024 * 1024 } });
+const forms = multer({ limits: { fieldSize: 10 * 1024 * 1024 } });
+
 app.use(forms.array());
 app.use(cors());
-
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -25,7 +25,6 @@ app.all(`*`, async (req, res) => {
 
   const openai_key = token.split(':')[0];
   if (!openai_key) return res.status(403).send('Forbidden');
-  if (openai_key.startsWith("fk")) url = url.replaceAll("api.openai.com", "openai.api2d.net");
 
   const proxy_key = token.split(':')[1] || "";
   console.log("PROXY_KEY:" + proxy_key);
@@ -34,80 +33,6 @@ app.all(`*`, async (req, res) => {
   if (process.env.PROXY_KEY && !validProxyKeys.includes(proxy_key)) {
     console.log("拒绝访问, PROXY_KEY无效");
     return res.status(403).send('Forbidden');
-  }
-
-  const { moderation, moderation_level, ...restBody } = req.body;
-  let sentence = "";
-  // 建立一个句子缓冲区
-  let sentence_buffer = [];
-  let processing = false;
-  let processing_stop = false;
-
-  async function process_buffer(res) {
-    if (processing_stop) {
-      console.log("processing_stop", processing_stop);
-      return false;
-    }
-
-    console.log("句子缓冲区" + new Date(), sentence_buffer);
-
-    // 处理句子缓冲区
-    if (processing) {
-      // 有正在处理的，1秒钟后重试
-      console.log("有正在处理的，1秒钟后重试");
-      setTimeout(() => process_buffer(res), 1000);
-      return false;
-    }
-
-    processing = true;
-    const sentence = sentence_buffer.shift();
-    console.log("取出句子", sentence);
-    if (sentence) {
-      if (sentence === '[DONE]') {
-        console.log("[DONE]", "结束输出");
-        res.write("data: " + sentence + "\n\n");
-        processing = false;
-        res.end();
-        return true;
-      } else {
-        // 开始对句子进行审核
-        let data_array = JSON.parse(sentence);
-        console.log("解析句子数据为array", data_array);
-
-        const sentence_content = data_array.choices[0]?.delta?.content;
-        console.log("sentence_content", sentence_content);
-        if (sentence_content) {
-          const params = { "Content": Buffer.from(sentence_content).toString('base64') };
-          const md_result = await mdClient.TextModeration(params);
-          // console.log("审核结果", md_result);
-          let md_check = moderation_level == 'high' ? md_result.Suggestion != 'Pass' : md_result.Suggestion == 'Block';
-          if (md_check) {
-            // 终止输出
-            console.log("审核不通过", sentence_content, md_result);
-            let forbidden_array = data_array;
-            forbidden_array.choices[0].delta.content = "这个话题不适合讨论，换个话题吧。";
-            res.write("data: " + JSON.stringify(forbidden_array) + "\n\n");
-            res.write("data: [DONE]\n\n");
-            res.end();
-            controller.abort();
-            processing = false;
-            processing_stop = true;
-            return false;
-          } else {
-            console.log("审核通过", sentence_content);
-            res.write("data: " + sentence + "\n\n");
-            processing = false;
-            console.log("processing", processing);
-            return true;
-          }
-        }
-
-      }
-    } else {
-      // console.log("句子缓冲区为空");
-    }
-
-    processing = false;
   }
 
   const options = {
@@ -119,10 +44,11 @@ app.all(`*`, async (req, res) => {
       'Authorization': 'Bearer ' + openai_key,
     },
     onMessage: async (data) => {
-      // console.log(data);
+      console.log(data);
       if (data === '[DONE]') {
-        sentence_buffer.push(data);
-        await process_buffer(res);
+        res.write("data: " + data + "\n\n");
+        res.end();
+        return true;
       } else {
         res.write("data: " + data + "\n\n");
       }
@@ -130,7 +56,7 @@ app.all(`*`, async (req, res) => {
   };
 
   if (req.method.toLocaleLowerCase() === 'post' && req.body) {
-    options.body = JSON.stringify(restBody);
+    options.body = JSON.stringify(req.body);
   }
 
   try {
