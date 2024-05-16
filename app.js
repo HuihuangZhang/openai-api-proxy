@@ -34,7 +34,7 @@ const httpProxy = process.env.HTTP_PROXY
 const controller = new AbortController();
 
 app.all(`*`, async (req, res) => {
-  console.log('get request');
+  console.log('get request model: ', req.body?.model);
   if (req.originalUrl) req.url = req.originalUrl;
   let url = `https://api.openai.com${req.url}`;
   // 从 header 中取得 Authorization': 'Bearer 后的 token

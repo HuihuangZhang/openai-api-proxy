@@ -9,5 +9,5 @@ RUN cnpm i
 
 ENV PORT=9000
 
-EXPOSE 10333
+EXPOSE 9000
 CMD ["node", "app.js"]
