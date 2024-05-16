@@ -1,18 +1,19 @@
 const express = require('express')
 const fetch = require('cross-fetch')
-const app = express()
 var multer = require('multer');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const cors = require('cors');
+const bodyParser = require('body-parser')
+const tencentcloud = require("tencentcloud-sdk-nodejs");
+
+const app = express()
 var forms = multer({ limits: { fieldSize: 10 * 1024 * 1024 } });
 app.use(forms.array());
-const cors = require('cors');
 app.use(cors());
 
-const bodyParser = require('body-parser')
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
-const tencentcloud = require("tencentcloud-sdk-nodejs");
 const TmsClient = tencentcloud.tms.v20201229.Client;
 const clientConfig = {
   credential: {
@@ -28,6 +29,8 @@ const clientConfig = {
 };
 const mdClient = process.env.TENCENT_CLOUD_SID && process.env.TENCENT_CLOUD_SKEY ? new TmsClient(clientConfig) : false;
 
+const httpProxy = process.env.HTTP_PROXY
+
 const controller = new AbortController();
 
 app.all(`*`, async (req, res) => {
@@ -38,7 +41,7 @@ app.all(`*`, async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(403).send('Forbidden');
 
-  const openai_key = process.env.OPENAI_KEY || token.split(':')[0];
+  const openai_key = token.split(':')[0];
   if (!openai_key) return res.status(403).send('Forbidden');
   if (openai_key.startsWith("fk")) url = url.replaceAll("api.openai.com", "openai.api2d.net");
 
@@ -276,7 +279,7 @@ async function* streamAsyncIterable(stream) {
   }
 }
 
-const proxyAgent = new HttpsProxyAgent('http://user1:ZNfTnsWP4NnT@180.184.69.129:22');
+const proxyAgent = process.env.HTTP_PROXY ? new HttpsProxyAgent(process.env.HTTP_PROXY) : null;
 
 async function myFetch(url, options) {
   const { timeout, ...fetchOptions } = options;
