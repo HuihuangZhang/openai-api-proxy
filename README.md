@@ -5,7 +5,6 @@ Simple proxy for OpenAi api via a one-line docker command
 
 🌳 如果你懒得自己搭建，那么可以试试[国内可以访问、可以微信充值的第三方OpenAI API服务：API2D.com](https://api2d.com/r/186008)，支持Chat酱、OpenCat、NextWeb、VSCode插件。
 
-
 - [腾讯云函数部署教程](./docs/FUNC.md) 🔥 腾讯云函数从4月25日起已经全地域支持SSE，推荐使用
 - [简体中文使用说明](./docs/README.CN.md)
 - [《如何快速开发一个OpenAI/GPT应用：国内开发者笔记》](https://github.com/easychen/openai-gpt-dev-notes-for-cn-developer)
@@ -32,11 +31,12 @@ You can deploy ./app.js to any environment that supports nodejs 14+, such as clo
 
 ## Docker Deployment
 
-```
-docker run -p 9000:9000 easychen/ai.level06.com:latest
+``` bash
+docker build -t openai_proxy:0.0.1 .
+docker run -p 10333:9000 [-e HTTP_PROXY=<http_proxy>] <image-name>
 ```
 
-The proxy address is http://${IP}:9000
+The proxy address is http://${IP}:10333
 
 ### Available Environment Variables
 

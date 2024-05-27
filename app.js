@@ -42,16 +42,6 @@ app.all(`*`, async (req, res) => {
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Authorization': 'Bearer ' + openai_key,
-    },
-    onMessage: async (data) => {
-      console.log(data);
-      if (data === '[DONE]') {
-        res.write("data: " + data + "\n\n");
-        res.end();
-        return true;
-      } else {
-        res.write("data: " + data + "\n\n");
-      }
     }
   };
 
@@ -73,13 +63,34 @@ app.all(`*`, async (req, res) => {
           'Cache-Control': 'no-cache',
           'Connection': 'keep-alive',
         });
+        
+        /*
+         * 参考：https://web.dev/articles/eventsource-basics#event_stream_format
+         * SSE 的数据格式是：
+         * ```
+         * data: [raw data] \n\n
+         * ```
+         */
         // 解析 SSE server-side event
         const { createParser } = await import("eventsource-parser");
         const parser = createParser((event) => {
           if (event.type === "event") {
-            options.onMessage(event.data);
+            const data = event.data;
+            /*
+             * '[DONE]' 是 [openai-node](https://github.com/openai/openai-node) 的结束语规范，并不是 SSE 的规范
+             * 最后一句是 
+             * ```
+             * data: [DONE]\n\n
+             * ```
+             */
+            if (data === '[DONE]') {
+              res.end("data: [DONE]\n\n");
+            } else {
+              res.write("data: " + data + "\n\n");
+            }
           }
         });
+
         if (!response.body.getReader) {
           const body = response.body;
           if (!body.on || !body.read) {
@@ -88,7 +99,6 @@ app.all(`*`, async (req, res) => {
           body.on("readable", () => {
             let chunk;
             while (null !== (chunk = body.read())) {
-              // console.log(chunk.toString());
               parser.feed(chunk.toString());
             }
           });
@@ -102,31 +112,32 @@ app.all(`*`, async (req, res) => {
         const body = await response.text();
         res.status(response.status).send(body);
       }
-    } else {
-      console.log("使用 fetch");
-      const response = await myFetch(url, options);
-      // 检查返回的内容类型
-      const contentType = response.headers.get("Content-Type");
-      // 根据内容类型处理返回的数据
-      if (contentType.includes("application/json")) {
-        // 处理JSON数据
-        const data = await response.json();
-        // 返回JSON数据
-        res.json(data);
-      } else if (contentType.includes("audio")) {
-        // 处理Audio数据
-        const audioBlob = await response.blob();
-        // 需要设置正确的Content-Type
-        res.setHeader('Content-Type', 'audio/mpeg');
-        // 发送音频数据给客户端
-        const audioStream = audioBlob.stream();
-        audioStream.pipe(res);
-      } else {
-        // 处理其他类型的返回或抛出错误
-        console.log("返回了未知类型的数据| contentType: ", contentType);
-        res.status(500).send("返回了未知类型的数据");
-      }
     }
+    // else {
+    //   console.log("使用 fetch");
+    //   const response = await myFetch(url, options);
+    //   // 检查返回的内容类型
+    //   const contentType = response.headers.get("Content-Type");
+    //   // 根据内容类型处理返回的数据
+    //   if (contentType.includes("application/json")) {
+    //     // 处理JSON数据
+    //     const data = await response.json();
+    //     // 返回JSON数据
+    //     res.json(data);
+    //   } else if (contentType.includes("audio")) {
+    //     // 处理Audio数据
+    //     const audioBlob = await response.blob();
+    //     // 需要设置正确的Content-Type
+    //     res.setHeader('Content-Type', 'audio/mpeg');
+    //     // 发送音频数据给客户端
+    //     const audioStream = audioBlob.stream();
+    //     audioStream.pipe(res);
+    //   } else {
+    //     // 处理其他类型的返回或抛出错误
+    //     console.log("返回了未知类型的数据| contentType: ", contentType);
+    //     res.status(500).send("返回了未知类型的数据");
+    //   }
+    // }
   } catch (error) {
     console.error(error);
     res.status(500).json({ "error": error.toString() });
